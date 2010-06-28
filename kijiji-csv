@@ -1,53 +1,78 @@
 #!/usr/bin/php
 <?php
-error_reporting(E_ERROR | E_WARNING | E_PARSE);
+function updateURLs($results, $URLs = array()) {
+	preg_match_all('/http:\/\/kingston.kijiji.ca\/c-cars-vehicles-cars-[^"]*/',$results,$URLs_temp);
+	return array_merge($URLs,$URLs_temp[0]);
+}
 
 function kijiji_get_urls($start) {
-	$next[1] = $start;
-	$urls = array();
-	
-	do {
-		$homepage = file_get_contents($next[1]);
-		preg_match_all('/http:\/\/kingston.kijiji.ca\/c-cars-vehicles-cars-[^"]*/',$homepage,$urls_temp);
-		$urls = array_merge($urls,$urls_temp[0]);
-	} while(preg_match('/(http:\/\/kingston.kijiji.ca\/f-cars-vehicles-cars-W0QQCatIdZ174QQPageZ[0-9]*)"[^>]+>Next/',$homepage,$next));
-	return array_unique($urls);
+	$results = file_get_contents($start);
+	preg_match('/<span class="titlecount">\(([0-9]*)\)<\/span>/i',$results,$pages);
+	$URLs = updateURLs($results);
+	$pages = ceil($pages[1]/20);
+
+	$chs = array();
+	$mh = curl_multi_init();
+
+	for($i = 1; $i < $pages; $i++) {
+		$ch = curl_init($start.'QQPageZ'.($i+1));
+		curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+		curl_multi_add_handle($mh, $ch);
+		$chs[] = $ch;
+	}
+
+	do curl_multi_exec($mh,$running); while($running > 0);
+
+	foreach($chs as $ch) {
+		$results = curl_multi_getcontent($ch);
+		$URLs = updateURLs($results, $URLs);
+		curl_multi_remove_handle($mh, $ch);
+		curl_close($ch);
+	}
+	curl_multi_close($mh);
+
+	return array_values(array_unique($URLs));
 }
 
-$urls = kijiji_get_urls('http://kingston.kijiji.ca/f-cars-vehicles-cars-W0QQCatIdZ174');
+$URLs = kijiji_get_urls('http://kingston.kijiji.ca/f-cars-vehicles-cars-W0QQCatIdZ174');
 
-foreach($urls as $url) {
-	$homepage = file_get_contents($url);
+$chs = array();
+$mh = curl_multi_init();
 
-	preg_match('/<td[^>]*>Date Listed<\/td><td[^>]*>([^<]*)<\/td>/',$homepage,$date_listed);
-	$date_listed = date('Y-m-d',strtotime($date_listed[1]));
-
-	preg_match('/<td[^>]*>Make<\/td><td[^>]*>([^<]*)<\/td>/',$homepage,$make);
-	$make = trim($make[1]);
-
-	preg_match('/<td[^>]*>Model<\/td><td[^>]*>([^<]*)<\/td>/',$homepage,$model);
-	$model = trim($model[1]);
-
-	preg_match('/<td[^>]*>Price<\/td><td[^>]*>[^<]*<strong>\$([0-9,.]*)<\/strong>/',$homepage,$price);
-	$price = (int)str_replace(',', '',$price[1]);
-
-	preg_match('/<td[^>]*>Kilometers<\/td><td[^>]*>([^<]*)<\/td>/',$homepage,$kilometers);
-	$kilometers = (int)$kilometers[1];
-
-	preg_match('/<td[^>]*>Year<\/td><td[^>]*>([^<]*)<\/td>/',$homepage,$year);
-	$year = (int)$year[1];
-
-
-	preg_match('/<!-- google_ad_section_start -->(.*)<!-- google_ad_section_end -->/',$homepage,$title);
-	$title = $title[1];
-
-	preg_match('/<span id="preview-local-desc">[^<]*<div>([^<]*)<\/div>/i',$homepage,$description);
-	$description = trim($description[1]);
-
-	$cars[] = array('year' => $year, 'make' => $make, 'model' => $model, 'price' => $price, 'title' => $title, 'mileage' => $kilometers,'date listed' => $date_listed, 'url' => $url,'site' => 'Kijiji', 'description' => $description);
+foreach($URLs as $URL) {
+	$ch = curl_init($URL);
+	curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+	curl_multi_add_handle($mh, $ch);
+	$chs[] = $ch;
 }
 
-print '"'.implode('","',array_keys($cars[0]))."\"\n";
-foreach($cars as $car)
-	print '"'.implode('","',$car)."\"\n";
+do {
+	curl_multi_exec($mh,$running);
+} while($running > 0);
+
+foreach($chs as $ch) {
+	$homepage = curl_multi_getcontent($ch);
+
+	$car = array();
+	preg_match_all('/<td[^>]*>(Make|Model|Date Listed|Year|Kilometers|Price)<\/td><td[^>]*>([^<]*<strong>\$)?([^<]*)(<\/strong>)?<\/td>/',$homepage,$matches, PREG_SET_ORDER);
+	foreach($matches as $match)
+		$car[$match[1]] = trim($match[3]);
+	if(isset($car['Date Listed']))
+		$car['Date Listed'] = date('Y-m-d',strtotime($car['Date Listed']));
+
+	if(preg_match('/<!-- google_ad_section_start -->(.*)<!-- google_ad_section_end -->/',$homepage,$title))
+		$car['Title'] = $title[1];
+	$info = curl_getinfo($ch);
+	$car['URL'] = $info['url'];
+	if(preg_match('/<!-- google_ad_section_start -->[^<]*<span id="preview-local-desc">(.*)<\/span>[^<]*<!-- google_ad_section_end -->/i',str_replace("\n",'',$homepage),$description))
+		$car['Description'] = trim($description[1]);
+	$cars[] = $car;
+	curl_multi_remove_handle($mh, $ch);
+	curl_close($ch);
+}
+curl_multi_close($mh);
+
+//print '"'.implode('","',array_keys($cars[0]))."\"\n";
+//foreach($cars as $car)
+//	print '"'.implode('","',$car)."\"\n";
 ?>
