@@ -72,7 +72,7 @@ foreach($chs as $ch) {
 }
 curl_multi_close($mh);
 
-//print '"'.implode('","',array_keys($cars[0]))."\"\n";
-//foreach($cars as $car)
-//	print '"'.implode('","',$car)."\"\n";
+print '"'.implode('","',array_keys($cars[0]))."\"\n";
+foreach($cars as $car)
+	print '"'.implode('","',$car)."\"\n";
 ?>
