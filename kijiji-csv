@@ -1,0 +1,53 @@
+#!/usr/bin/php
+<?php
+error_reporting(E_ERROR | E_WARNING | E_PARSE);
+
+function kijiji_get_urls($start) {
+	$next[1] = $start;
+	$urls = array();
+	
+	do {
+		$homepage = file_get_contents($next[1]);
+		preg_match_all('/http:\/\/kingston.kijiji.ca\/c-cars-vehicles-cars-[^"]*/',$homepage,$urls_temp);
+		$urls = array_merge($urls,$urls_temp[0]);
+	} while(preg_match('/(http:\/\/kingston.kijiji.ca\/f-cars-vehicles-cars-W0QQCatIdZ174QQPageZ[0-9]*)"[^>]+>Next/',$homepage,$next));
+	return array_unique($urls);
+}
+
+$urls = kijiji_get_urls('http://kingston.kijiji.ca/f-cars-vehicles-cars-W0QQCatIdZ174');
+
+foreach($urls as $url) {
+	$homepage = file_get_contents($url);
+
+	preg_match('/<td[^>]*>Date Listed<\/td><td[^>]*>([^<]*)<\/td>/',$homepage,$date_listed);
+	$date_listed = date('Y-m-d',strtotime($date_listed[1]));
+
+	preg_match('/<td[^>]*>Make<\/td><td[^>]*>([^<]*)<\/td>/',$homepage,$make);
+	$make = trim($make[1]);
+
+	preg_match('/<td[^>]*>Model<\/td><td[^>]*>([^<]*)<\/td>/',$homepage,$model);
+	$model = trim($model[1]);
+
+	preg_match('/<td[^>]*>Price<\/td><td[^>]*>[^<]*<strong>\$([0-9,.]*)<\/strong>/',$homepage,$price);
+	$price = (int)str_replace(',', '',$price[1]);
+
+	preg_match('/<td[^>]*>Kilometers<\/td><td[^>]*>([^<]*)<\/td>/',$homepage,$kilometers);
+	$kilometers = (int)$kilometers[1];
+
+	preg_match('/<td[^>]*>Year<\/td><td[^>]*>([^<]*)<\/td>/',$homepage,$year);
+	$year = (int)$year[1];
+
+
+	preg_match('/<!-- google_ad_section_start -->(.*)<!-- google_ad_section_end -->/',$homepage,$title);
+	$title = $title[1];
+
+	preg_match('/<span id="preview-local-desc">[^<]*<div>([^<]*)<\/div>/i',$homepage,$description);
+	$description = trim($description[1]);
+
+	$cars[] = array('year' => $year, 'make' => $make, 'model' => $model, 'price' => $price, 'title' => $title, 'mileage' => $kilometers,'date listed' => $date_listed, 'url' => $url,'site' => 'Kijiji', 'description' => $description);
+}
+
+print '"'.implode('","',array_keys($cars[0]))."\"\n";
+foreach($cars as $car)
+	print '"'.implode('","',$car)."\"\n";
+?>
